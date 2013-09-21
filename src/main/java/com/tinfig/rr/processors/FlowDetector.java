@@ -37,7 +37,6 @@ public class FlowDetector extends Processor {
 	private static final String MIN_TRACKED_POINTS = "flow.minTrackedPoints";
 	private static final String Q_LEVEL = "flow.qLevel";
 	private static final String MIN_DIST = "flow.minDist";
-	private static final String LEARNING_RATE = "flow.learningRate";
 	private static final String SHOW_FLOW = "flow.showFlow";
 
 	private int minTrackedPoints = 100;
@@ -105,15 +104,17 @@ public class FlowDetector extends Processor {
 			opencv_core.cvCopy(rects, currentGray);
 		}
 
-		if (debug == null) {
-			debug = currentGray.clone();
-		} else {
-			opencv_core.cvCopy(currentGray, debug);
+		if (showFlow) {
+			if (debug == null) {
+				debug = currentGray.clone();
+			} else {
+				opencv_core.cvCopy(currentGray, debug);
+			}
 		}
 
-		// Detect motion of the rectangles
+		// Detect motion of the features
 
-		if (shouldAddNewPoints()) {
+		if (trackedPoints.size() < minTrackedPoints) {
 			List<CvPoint2D32f> features = detectFeaturePoints(currentGray);
 			initialPositions.addAll(features);
 			trackedPoints.addAll(features);
@@ -132,7 +133,8 @@ public class FlowDetector extends Processor {
 				new float[trackedPoints.size()], new CvTermCriteria(opencv_core.CV_TERMCRIT_ITER
 						+ opencv_core.CV_TERMCRIT_EPS, 30, 0.01), 0);
 
-		// 2. loop over the tracked points to reject the undesirables
+		// Reject points that did not move or did not move enough
+
 		List<CvPoint2D32f> trackedPointsNewUnfiltered = toList(trackedPointsNewUnfilteredOCV, Integer.MAX_VALUE);
 		List<CvPoint2D32f> initialPositionsNew = new ArrayList<>();
 		List<CvPoint2D32f> trackedPointsNew = new ArrayList<>();
@@ -143,27 +145,28 @@ public class FlowDetector extends Processor {
 			}
 		}
 
-		// 3. handle the accepted tracked points
-		trackPoints(initialPositionsNew, trackedPointsNew, frame);
+		// Add up all the motion into a scalar value
 
-		visualizeTrackedPoints(initialPositionsNew, trackedPointsNew, debug);
+		computeOverallFlow(initialPositionsNew, trackedPointsNew, frame);
+
+		// Draw vectors for the motion
+
 		if (showFlow) {
+			visualizeTrackedPoints(initialPositionsNew, trackedPointsNew, debug);
 			frame.getDebugImages().put("flow", debug);
 		}
 
-		// 4. current points and image become previous ones
+		// Update the fields for next frame
+
 		trackedPoints = trackedPointsNew;
 		initialPositions = initialPositionsNew;
 		opencv_core.cvCopy(currentGray, previousGray);
 	}
 
-	private void trackPoints(List<CvPoint2D32f> startPoints, List<CvPoint2D32f> endPoints, Frame frame) {
+	private void computeOverallFlow(List<CvPoint2D32f> startPoints, List<CvPoint2D32f> endPoints, Frame frame) {
 		int flow = 0;
 
 		if (startPoints.size() >= 0) {
-			double sum = 0;
-			int movingPoints = 0;
-
 			for (int i = 0; i < startPoints.size(); i++) {
 				CvPoint startPoint = opencv_core.cvPointFrom32f(startPoints.get(i));
 				CvPoint endPoint = opencv_core.cvPointFrom32f(endPoints.get(i));
@@ -172,21 +175,12 @@ public class FlowDetector extends Processor {
 				int deltaY = endPoint.y() - startPoint.y();
 
 				if (deltaX > 0 || deltaY > 0) {
-					movingPoints++;
 					flow += Math.round(Math.abs(Math.sqrt(deltaX * deltaX + deltaY * deltaY)));
 				}
 			}
 		}
 
 		frame.getArtifacts().put(ARTIFACT_FLOW_THIS_FRAME, flow);
-	}
-
-	private void visualizePoints(List<CvPoint2D32f> points, IplImage debug) {
-		for (int i = 0; i < points.size(); i++) {
-			CvPoint point = opencv_core.cvPointFrom32f(points.get(i));
-			// Mark tracked point movement with aline
-			opencv_core.cvDrawCircle(debug, point, 2, CvScalar.BLUE, 1, opencv_core.CV_AA, 0);
-		}
 	}
 
 	private void visualizeTrackedPoints(List<CvPoint2D32f> startPoints, List<CvPoint2D32f> endPoints, IplImage debug) {
@@ -197,9 +191,7 @@ public class FlowDetector extends Processor {
 		for (int i = 0; i < startPoints.size(); i++) {
 			CvPoint startPoint = opencv_core.cvPointFrom32f(startPoints.get(i));
 			CvPoint endPoint = opencv_core.cvPointFrom32f(endPoints.get(i));
-			// Mark tracked point movement with a line
 			opencv_core.cvLine(debug, startPoint, endPoint, CvScalar.WHITE, 1, opencv_core.CV_AA, 0);
-			// Mark starting point with circle
 			opencv_core.cvCircle(debug, startPoint, 3, CvScalar.WHITE, -1, opencv_core.CV_AA, 0);
 		}
 	}
@@ -244,9 +236,5 @@ public class FlowDetector extends Processor {
 
 		points.position(oldPosition);
 		return ret;
-	}
-
-	private boolean shouldAddNewPoints() {
-		return trackedPoints.size() < minTrackedPoints;
 	}
 }

@@ -9,9 +9,6 @@ import org.apache.commons.lang.StringUtils;
  * throw run-time exceptions (not checked exceptions) so they can be used
  * liberally without adding work for the caller.
  * <p>
- * Don't use these for validation user input. Use methods in a class like
- * {@link ValidationUtil} for user input validation.
- * <p>
  * Methods always return the input object unaltered.
  * <p>
  * When a method can throw different kinds of exceptions, the <b>most

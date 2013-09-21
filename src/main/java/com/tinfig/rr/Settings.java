@@ -18,9 +18,6 @@ public class Settings {
 
 	private transient File file;
 
-	private Settings() {
-	}
-
 	public Settings(File file) {
 		this.file = file;
 	}
